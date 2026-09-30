@@ -1,0 +1,152 @@
+@page "/workflow-json"
+@inject RuleEngineApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Workflow JSON</PageTitle>
+
+<MudStack Spacing="3">
+    <div class="page-header">
+        <div class="page-header-left">
+            <div class="page-header-title">Workflow JSON</div>
+            <div class="page-header-subtitle">The stored JSON is the RulesEngine runtime definition and also contains the framework parameter configuration.</div>
+        </div>
+    </div>
+
+    <MudPaper Class="pa-4">
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+            <MudSelect T="string"
+                       Label="Workflow"
+                       Value="_workflowCode"
+                       ValueChanged="OnWorkflowChanged"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense"
+                       Style="min-width:320px">
+                @foreach (var workflow in _workflows)
+                {
+                    <MudSelectItem T="string" Value="@workflow.WorkflowCode">@workflow.WorkflowName</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudButton Variant="Variant.Outlined" OnClick="Load">Reload</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="_saving">
+                @(_saving ? "Saving..." : "Save JSON & Sync Framework")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="Publish" Disabled="_saving">
+                Publish From DB
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+
+    @if (_model is not null)
+    {
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="3"><div class="dashboard-stat"><div class="dashboard-stat-label">Workflow</div><div class="dashboard-stat-value" style="font-size:18px">@_model.WorkflowName</div></div></MudItem>
+            <MudItem xs="12" md="2"><div class="dashboard-stat"><div class="dashboard-stat-label">Version</div><div class="dashboard-stat-value">v@_model.Version</div></div></MudItem>
+            <MudItem xs="12" md="3"><div class="dashboard-stat"><div class="dashboard-stat-label">JSON Hash</div><div class="dashboard-stat-value" style="font-size:12px;word-break:break-all">@_model.SourceHash</div></div></MudItem>
+            <MudItem xs="12" md="4"><div class="dashboard-stat"><div class="dashboard-stat-label">Last Updated</div><div class="dashboard-stat-value" style="font-size:16px">@_model.GeneratedAtUtc.ToLocalTime()</div></div></MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            <b>Sync behavior:</b> editing the <code>parameters</code> section and saving JSON updates ParameterDefinition and ScoreDefinition. The Framework page reads those DB records immediately. Rules are also synchronized and the same stored JSON is used by RulesEngine.
+        </MudAlert>
+
+        <MudTextField T="string"
+                      Label="Workflow JSON"
+                      @bind-Value="_json"
+                      Lines="35"
+                      FullWidth="true"
+                      Variant="Variant.Outlined"
+                      Class="json-editor" />
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+            Select a workflow with a published JSON document.
+        </MudAlert>
+    }
+</MudStack>
+
+@code {
+    private List<WorkflowSummaryDto> _workflows = [];
+    private string _workflowCode = string.Empty;
+    private WorkflowJsonDto? _model;
+    private string _json = string.Empty;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _workflows = (await Api.GetWorkflowsAsync()).ToList();
+            if (_workflows.Count > 0)
+            {
+                _workflowCode = _workflows[0].WorkflowCode;
+                await Load();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task OnWorkflowChanged(string value)
+    {
+        _workflowCode = value;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (string.IsNullOrWhiteSpace(_workflowCode)) return;
+        try
+        {
+            _model = await Api.GetWorkflowJsonAsync(_workflowCode);
+            _json = _model.JsonContent;
+        }
+        catch (Exception ex)
+        {
+            _model = null;
+            _json = string.Empty;
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            _saving = true;
+            _model = await Api.SaveWorkflowJsonAsync(_workflowCode, _json);
+            _json = _model.JsonContent;
+            Snackbar.Add($"JSON saved. Framework parameters synchronized. Version v{_model.Version}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task Publish()
+    {
+        try
+        {
+            _saving = true;
+            _model = await Api.PublishAsync(_workflowCode);
+            _json = _model.JsonContent;
+            Snackbar.Add($"Published from DB. Version v{_model.Version}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

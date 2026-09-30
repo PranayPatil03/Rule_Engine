@@ -1,0 +1,44 @@
+@page "/"
+
+<PageTitle>Corporate Assessment</PageTitle>
+
+<MudStack Spacing="3">
+    <div class="page-header">
+        <div class="page-header-left">
+            <div class="page-header-title">Corporate Assessment Framework</div>
+            <div class="page-header-subtitle">Three database-driven workflows using EF Core, persisted RulesEngine JSON and MudBlazor.</div>
+        </div>
+        <MudButton Href="/framework" Variant="Variant.Filled" Color="Color.Primary">Open Framework</MudButton>
+    </div>
+
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4">
+            <MudCard Class="pa-4">
+                <MudText Typo="Typo.h6">Business Framework</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">PPA availability, asset diversification, counterparty quality and PPA mix.</MudText>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudCard Class="pa-4">
+                <MudText Typo="Typo.h6">Operational Framework</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">Plant availability, grid availability and plant load factor.</MudText>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudCard Class="pa-4">
+                <MudText Typo="Typo.h6">Financial Framework</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">Leverage, cumulative DSCR and minimum DSCR.</MudText>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        JSON → SQL synchronization is built in. If you add or update a parameter, weight, explanation or scoring definition in Workflow JSON and save it, the Framework Evaluation screen reads the synchronized ParameterDefinition and ScoreDefinition records.
+    </MudAlert>
+
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="4"><MudButton Href="/framework" FullWidth="true" Variant="Variant.Outlined">Framework Evaluation</MudButton></MudItem>
+        <MudItem xs="12" md="4"><MudButton Href="/workflow-json" FullWidth="true" Variant="Variant.Outlined">Workflow JSON</MudButton></MudItem>
+        <MudItem xs="12" md="4"><MudButton Href="/rules" FullWidth="true" Variant="Variant.Outlined">Rule Configuration</MudButton></MudItem>
+    </MudGrid>
+</MudStack>

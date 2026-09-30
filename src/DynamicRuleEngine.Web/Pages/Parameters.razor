@@ -1,0 +1,162 @@
+@page "/parameters"
+@inject RuleEngineApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Parameter Configuration</PageTitle>
+
+<MudStack Spacing="3">
+    <div class="page-header">
+        <div class="page-header-left">
+            <div class="page-header-title">Parameter Configuration</div>
+            <div class="page-header-subtitle">Maintain the framework metadata stored in ParameterDefinition and ScoreDefinition.</div>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="NewParameter">Add Parameter</MudButton>
+    </div>
+
+    <MudPaper Class="pa-4">
+        <MudSelect T="string" Label="Workflow" Value="_workflowCode" ValueChanged="OnWorkflowChanged" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var workflow in _workflows)
+            {
+                <MudSelectItem T="string" Value="@workflow.WorkflowCode">@workflow.WorkflowName</MudSelectItem>
+            }
+        </MudSelect>
+    </MudPaper>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="4">
+            <div class="form-section">
+                <div class="form-section-title">@(_edit.Id == 0 ? "Add Parameter" : "Edit Parameter")</div>
+                <MudStack Spacing="2">
+                    <MudTextField T="string" Label="Parameter Code" @bind-Value="_edit.ParameterCode" Disabled="@(_edit.Id != 0)" />
+                    <MudTextField T="string" Label="Display Name" @bind-Value="_edit.DisplayName" />
+                    <MudSelect T="ParameterDataType" Label="Data Type" @bind-Value="_edit.DataType">
+                        @foreach (var type in Enum.GetValues<ParameterDataType>())
+                        {
+                            <MudSelectItem T="ParameterDataType" Value="@type">@type</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudNumericField T="decimal" Label="Weight (%)" @bind-Value="_edit.Weight" Min="0" />
+                    <MudNumericField T="int" Label="Sort Order" @bind-Value="_edit.SortOrder" Min="1" />
+                    <MudCheckBox T="bool" Label="Required" @bind-Value="_edit.IsRequired" />
+                    <MudCheckBox T="bool" Label="Active" @bind-Value="_edit.IsActive" />
+                    <MudTextField T="string" Label="Why It Matters" Lines="3" @bind-Value="_edit.WhyItMatters" />
+                    <MudTextField T="string" Label="How do we measure it?" Lines="3" @bind-Value="_edit.HowToMeasure" />
+
+                    <MudText Typo="Typo.subtitle2">Scoring Definition</MudText>
+                    @foreach (var score in _edit.ScoreDefinitions.OrderBy(x => x.Score))
+                    {
+                        <MudTextField T="string"
+                                      Label="@($"Score {score.Score}")"
+                                      @bind-Value="score.Description" />
+                    }
+
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+                        <MudButton Variant="Variant.Outlined" OnClick="NewParameter">Clear</MudButton>
+                    </MudStack>
+                </MudStack>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-2">
+                <MudTable Items="_items" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Parameter</MudTh>
+                        <MudTh>Weight</MudTh>
+                        <MudTh>Data Type</MudTh>
+                        <MudTh>Scores</MudTh>
+                        <MudTh>Active</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="item">
+                        <MudTd><b>@item.DisplayName</b><br /><small>@item.ParameterCode</small></MudTd>
+                        <MudTd>@item.Weight%</MudTd>
+                        <MudTd>@item.DataType</MudTd>
+                        <MudTd>@item.ScoreDefinitions.Count</MudTd>
+                        <MudTd>@(item.IsActive ? "Yes" : "No")</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => Edit(item))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => Delete(item))" />
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-4">No parameters configured.</MudText></NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    private List<WorkflowSummaryDto> _workflows = [];
+    private string _workflowCode = string.Empty;
+    private List<ParameterDto> _items = [];
+    private ParameterDto _edit = new() { DataType = ParameterDataType.Decimal, IsActive = true, SortOrder = 1 };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _workflows = (await Api.GetWorkflowsAsync()).ToList();
+            if (_workflows.Count > 0) { _workflowCode = _workflows[0].WorkflowCode; await Load(); }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task OnWorkflowChanged(string value) { _workflowCode = value; NewParameter(); await Load(); }
+
+    private async Task Load()
+    {
+        if (string.IsNullOrWhiteSpace(_workflowCode)) return;
+        try { _items = (await Api.GetParametersAsync(_workflowCode)).ToList(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private void NewParameter()
+    {
+        _edit = new ParameterDto
+        {
+            DataType = ParameterDataType.Decimal,
+            IsActive = true,
+            SortOrder = _items.Count + 1,
+            ScoreDefinitions = Enumerable.Range(1, 5).Select(x => new ScoreDefinitionDto { Score = x }).ToList()
+        };
+    }
+
+    private void Edit(ParameterDto item)
+    {
+        _edit = new ParameterDto
+        {
+            Id = item.Id, ParameterCode = item.ParameterCode, DisplayName = item.DisplayName, DataType = item.DataType,
+            IsRequired = item.IsRequired, SortOrder = item.SortOrder, IsActive = item.IsActive, Weight = item.Weight,
+            WhyItMatters = item.WhyItMatters, HowToMeasure = item.HowToMeasure,
+            ScoreDefinitions = item.ScoreDefinitions.Select(x => new ScoreDefinitionDto { Id = x.Id, Score = x.Score, Description = x.Description }).ToList()
+        };
+        while (_edit.ScoreDefinitions.Count < 5) _edit.ScoreDefinitions.Add(new ScoreDefinitionDto { Score = _edit.ScoreDefinitions.Count + 1 });
+        _edit.ScoreDefinitions = _edit.ScoreDefinitions.OrderBy(x => x.Score).Take(5).ToList();
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            await Api.SaveParameterAsync(_workflowCode, _edit);
+
+            Snackbar.Add(
+                "Parameter saved as draft. Publish the workflow to make it available in Framework.",
+                Severity.Success);
+
+            await Load();
+            NewParameter();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+    private async Task Delete(ParameterDto item)
+    {
+        try { await Api.DeleteParameterAsync(_workflowCode, item.Id); await Load(); Snackbar.Add("Parameter deleted.", Severity.Success); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DynamicRuleEngine.Domain\DynamicRuleEngine.Domain.csproj" />
+    <ProjectReference Include="..\DynamicRuleEngine.Application\DynamicRuleEngine.Application.csproj" />
+    <ProjectReference Include="..\..\Libraries\RulesEngine\RulesEngine.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,567 @@
+@page "/report-generation"
+
+@using System.Linq
+@using System.Text.Json
+@using DynamicRuleEngine.Application.DTOs
+@using DynamicRuleEngine.Domain.Enums
+
+@inject RuleEngineApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Report Generation</PageTitle>
+
+<MudStack Spacing="3">
+
+    <div class="page-header">
+
+        <div class="page-header-left">
+
+            <div class="page-header-title">
+                Report Generation
+            </div>
+
+            <div class="page-header-subtitle">
+                Run the rules first, then use the result for report generation.
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <MudPaper Class="pa-4 mb-3">
+        <MudSelect T="string" Label="Workflow" Value="_workflowCode" ValueChanged="OnWorkflowChanged" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var workflow in _workflows)
+            {
+                <MudSelectItem T="string" Value="@workflow.WorkflowCode">@workflow.WorkflowName</MudSelectItem>
+            }
+        </MudSelect>
+    </MudPaper>
+
+    <MudAlert Severity="Severity.Info"
+              Variant="Variant.Outlined">
+
+        The report page does not contain business rules.
+        It sends inputs to the API, which executes the published WorkflowJson.
+
+    </MudAlert>
+
+
+    <MudGrid Spacing="3">
+
+        <!-- INPUT -->
+
+        <MudItem xs="12" lg="7">
+
+            <div class="evaluation-input-panel">
+
+                <div class="section-header">
+
+                    <div>
+
+                        <div class="section-title">
+                            @SelectedWorkflowName Report
+                        </div>
+
+                        <div class="section-subtitle">
+                            Report inputs are loaded dynamically from the database.
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <MudGrid Spacing="2">
+
+                    @if (_loading)
+                    {
+                        <MudItem xs="12">
+
+                            <MudProgressLinear
+                                Indeterminate="true"
+                                Size="Size.Small" />
+
+                        </MudItem>
+                    }
+                    else
+                    {
+                        @foreach (var parameter in _parameters
+                            .Where(x => x.IsActive)
+                            .OrderBy(x => x.SortOrder))
+                        {
+                            <MudItem xs="12" md="6">
+
+                                @if (parameter.DataType ==
+                                    ParameterDataType.Boolean)
+                                {
+                                    <MudCheckBox T="bool"
+                                                 Label="@parameter.DisplayName"
+                                                 Value="@GetBool(parameter.ParameterCode)"
+                                                 ValueChanged="@(value => SetBool(parameter.ParameterCode, value))"
+                                                 Color="Color.Primary" />
+                                }
+                                else
+                                {
+                                    <MudTextField T="string"
+                                                  Label="@parameter.DisplayName"
+                                                  Value="@GetValue(parameter.ParameterCode)"
+                                                  ValueChanged="@(value => SetValue(parameter.ParameterCode, value))"
+                                                  HelperText="@parameter.ParameterCode"
+                                                  Placeholder="@GetPlaceholder(parameter.DataType)"
+                                                  Required="@parameter.IsRequired"
+                                                  Variant="Variant.Outlined"
+                                                  Margin="Margin.Dense" />
+                                }
+
+                            </MudItem>
+                        }
+                    }
+
+                </MudGrid>
+
+
+                <MudStack Row="true"
+                          Class="mt-5"
+                          Spacing="1">
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Description"
+                               OnClick="GenerateReport"
+                               Disabled="_busy">
+
+                        @(_busy
+                            ? "Processing..."
+                            : "Generate Report")
+
+                    </MudButton>
+
+
+                    <MudButton Variant="Variant.Text"
+                               StartIcon="@Icons.Material.Filled.Clear"
+                               OnClick="Clear"
+                               Disabled="_busy">
+
+                        Clear
+
+                    </MudButton>
+
+                </MudStack>
+
+            </div>
+
+        </MudItem>
+
+
+        <!-- RESULT -->
+
+        <MudItem xs="12" lg="5">
+
+            <div class="evaluation-result-panel">
+
+                <div class="section-header">
+
+                    <div>
+
+                        <div class="section-title">
+                            Report Result
+                        </div>
+
+                        <div class="section-subtitle">
+                            Validation and calculations
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                @if (_result is null)
+                {
+                    <div class="empty-state">
+
+                        <div class="empty-state-title">
+                            Ready
+                        </div>
+
+                        <div class="empty-state-description">
+                            Enter values and generate the report.
+                        </div>
+
+                    </div>
+                }
+                else if (!_result.Success)
+                {
+                    <MudAlert Severity="Severity.Error"
+                              Variant="Variant.Outlined">
+
+                        @_result.Message
+
+                    </MudAlert>
+
+
+                    @if (_result.ValidationErrors.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle2"
+                                 Class="mt-4 mb-2">
+
+                            Validation Errors
+
+                        </MudText>
+
+
+                        @foreach (var error in _result.ValidationErrors)
+                        {
+                            <MudAlert Severity="Severity.Error"
+                                      Dense="true"
+                                      Class="mb-2">
+
+                                <b>@error.RuleCode</b>:
+                                @error.Message
+
+                            </MudAlert>
+                        }
+                    }
+                }
+                else
+                {
+                    <div class="evaluation-result-header">
+
+                        <MudText Typo="Typo.subtitle1">
+                            Report Ready
+                        </MudText>
+
+                        <MudChip T="string"
+                                 Color="Color.Success"
+                                 Variant="Variant.Filled">
+
+                            VALID
+
+                        </MudChip>
+
+                    </div>
+
+
+                    <MudText Typo="Typo.caption"
+                             Class="mt-3">
+
+                        Workflow:
+                        @_result.WorkflowCode
+
+                        |
+
+                        JSON Version:
+                        v@_result.WorkflowJsonVersion
+
+                    </MudText>
+
+
+                    @if (_result.Calculations.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle2"
+                                 Class="mt-4 mb-2">
+
+                            Calculated Values
+
+                        </MudText>
+
+
+                        @foreach (var calculation in _result.Calculations)
+                        {
+                            <div class="evaluation-calculation">
+
+                                <MudStack Row="true"
+                                          Justify="Justify.SpaceBetween"
+                                          AlignItems="AlignItems.Center">
+
+                                    <div>
+
+                                        <MudText Typo="Typo.caption">
+                                            @calculation.RuleName
+                                        </MudText>
+
+                                        <MudText Typo="Typo.caption"
+                                                 Color="Color.Secondary">
+
+                                            @calculation.RuleCode
+
+                                        </MudText>
+
+                                    </div>
+
+
+                                    <MudText Typo="Typo.h6"
+                                             Color="Color.Primary">
+
+                                        @DisplayValue(
+                                            calculation.Value)
+
+                                    </MudText>
+
+                                </MudStack>
+
+                            </div>
+                        }
+                    }
+
+
+                    <MudAlert Severity="Severity.Success"
+                              Class="mt-4"
+                              Variant="Variant.Outlined">
+
+                        Rules passed.
+                        The report can now be generated.
+
+                    </MudAlert>
+
+                }
+
+            </div>
+
+        </MudItem>
+
+    </MudGrid>
+
+</MudStack>
+
+
+@code {
+
+    private List<WorkflowSummaryDto> _workflows = [];
+    private string _workflowCode = string.Empty;
+    private List<ParameterDto> _parameters = [];
+
+    private string SelectedWorkflowName => _workflows.FirstOrDefault(x => x.WorkflowCode == _workflowCode)?.WorkflowName ?? _workflowCode;
+
+
+    private readonly Dictionary<string, string> _values =
+        new(StringComparer.OrdinalIgnoreCase);
+
+
+    private GenerateReportResponseDto? _result;
+
+
+    private bool _busy;
+
+    private bool _loading;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _loading = true;
+
+            _workflows = (await Api.GetWorkflowsAsync()).ToList();
+            if (_workflows.Count > 0)
+            {
+                _workflowCode = _workflows[0].WorkflowCode;
+                await LoadParameters();
+            }
+
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                ex.Message,
+                Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+
+    private async Task OnWorkflowChanged(string value)
+    {
+        _workflowCode = value;
+        await LoadParameters();
+    }
+
+    private async Task LoadParameters()
+    {
+        _parameters = (await Api.GetParametersAsync(_workflowCode)).ToList();
+        _values.Clear();
+        foreach (var parameter in _parameters)
+        {
+            _values[parameter.ParameterCode] =
+                parameter.DataType == ParameterDataType.Boolean ? "false" : string.Empty;
+        }
+        _result = null;
+    }
+
+    private string GetValue(string code)
+    {
+        return _values.TryGetValue(
+            code,
+            out var value)
+                ? value
+                : string.Empty;
+    }
+
+
+    private void SetValue(
+        string code,
+        string? value)
+    {
+        _values[code] =
+            value ?? string.Empty;
+    }
+
+
+    private bool GetBool(string code)
+    {
+        return bool.TryParse(
+            GetValue(code),
+            out var value)
+                && value;
+    }
+
+
+    private void SetBool(
+        string code,
+        bool value)
+    {
+        _values[code] =
+            value.ToString();
+    }
+
+
+    private string GetPlaceholder(
+        ParameterDataType type)
+    {
+        return type switch
+        {
+            ParameterDataType.Integer =>
+                "Enter integer",
+
+            ParameterDataType.Decimal =>
+                "Enter decimal",
+
+            ParameterDataType.Double =>
+                "Enter number",
+
+            ParameterDataType.Boolean =>
+                "true / false",
+
+            ParameterDataType.Date =>
+                "yyyy-MM-dd",
+
+            _ =>
+                "Enter value"
+        };
+    }
+
+
+    private async Task GenerateReport()
+    {
+        try
+        {
+            _busy = true;
+
+            _result = null;
+
+
+            var parameters =
+                new Dictionary<string, JsonElement>(
+                    StringComparer.OrdinalIgnoreCase);
+
+
+            foreach (var parameter in _parameters
+                .Where(x => x.IsActive)
+                .OrderBy(x => x.SortOrder))
+            {
+                var value =
+                    GetValue(parameter.ParameterCode);
+
+
+                if (parameter.IsRequired &&
+                    string.IsNullOrWhiteSpace(value) &&
+                    parameter.DataType !=
+                        ParameterDataType.Boolean)
+                {
+                    Snackbar.Add(
+                        $"{parameter.DisplayName} is required.",
+                        Severity.Warning);
+
+                    return;
+                }
+
+
+                if (parameter.DataType ==
+                    ParameterDataType.Boolean)
+                {
+                    parameters[parameter.ParameterCode] =
+                        JsonSerializer.SerializeToElement(
+                            GetBool(parameter.ParameterCode));
+                }
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(value))
+                    {
+                        continue;
+                    }
+
+                    parameters[parameter.ParameterCode] =
+                        JsonSerializer.SerializeToElement(
+                            value);
+                }
+            }
+
+
+            _result =
+                await Api.GenerateReportAsync(
+                    new EvaluateRequestDto
+                    {
+                        WorkflowCode =
+                            _workflowCode,
+
+                        Parameters =
+                            parameters
+                    });
+
+
+            Snackbar.Add(
+                _result.Success
+                    ? "Report rules completed."
+                    : "Report validation failed.",
+                _result.Success
+                    ? Severity.Success
+                    : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                ex.Message,
+                Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+
+    private void Clear()
+    {
+        foreach (var parameter in _parameters)
+        {
+            _values[parameter.ParameterCode] =
+                parameter.DataType ==
+                    ParameterDataType.Boolean
+                        ? "false"
+                        : string.Empty;
+        }
+
+        _result = null;
+    }
+
+
+    private static string DisplayValue(
+        object? value)
+    {
+        return value?.ToString() ?? "-";
+    }
+}

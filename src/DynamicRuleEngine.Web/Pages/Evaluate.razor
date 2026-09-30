@@ -1,0 +1,160 @@
+@page "/evaluate"
+@using System.Text.Json
+@inject RuleEngineApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Evaluate Workflow</PageTitle>
+
+<MudStack Spacing="3">
+    <div class="page-header">
+        <div class="page-header-left">
+            <div class="page-header-title">Evaluate Workflow</div>
+            <div class="page-header-subtitle">Select any of the configured frameworks and execute its published RulesEngine JSON.</div>
+        </div>
+    </div>
+
+    <MudPaper Class="pa-4">
+        <MudSelect T="string" Label="Workflow" Value="_workflowCode" ValueChanged="OnWorkflowChanged" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var workflow in _workflows)
+            {
+                <MudSelectItem T="string" Value="@workflow.WorkflowCode">@workflow.WorkflowName</MudSelectItem>
+            }
+        </MudSelect>
+    </MudPaper>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" lg="7">
+            <div class="evaluation-input-panel">
+                <div class="section-header">
+                    <div>
+                        <div class="section-title">@SelectedWorkflowName</div>
+                        <div class="section-subtitle">Inputs come from ParameterDefinition.</div>
+                    </div>
+                </div>
+
+                @if (_loading)
+                {
+                    <MudProgressLinear Indeterminate="true" />
+                }
+                else
+                {
+                    <MudGrid Spacing="2">
+                        @foreach (var parameter in _parameters.Where(x => x.IsActive).OrderBy(x => x.SortOrder))
+                        {
+                            <MudItem xs="12" md="6">
+                                @if (parameter.DataType == DynamicRuleEngine.Domain.Enums.ParameterDataType.Boolean)
+                                {
+                                    <MudCheckBox T="bool" Label="@parameter.DisplayName" Value="@GetBool(parameter.ParameterCode)" ValueChanged="@(v => SetBool(parameter.ParameterCode, v))" />
+                                }
+                                else
+                                {
+                                    <MudTextField T="string" Label="@parameter.DisplayName" Value="@GetValue(parameter.ParameterCode)" ValueChanged="@(v => SetValue(parameter.ParameterCode, v))" Required="@parameter.IsRequired" HelperText="@parameter.ParameterCode" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                }
+                            </MudItem>
+                        }
+                    </MudGrid>
+
+                    <MudButton Class="mt-5" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="RunEvaluation" Disabled="_busy">
+                        @(_busy ? "Evaluating..." : "Evaluate Rules")
+                    </MudButton>
+                }
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" lg="5">
+            <div class="evaluation-result-panel">
+                <div class="section-header"><div><div class="section-title">Result</div><div class="section-subtitle">RulesEngine validation and calculation output</div></div></div>
+                @if (_result is null)
+                {
+                    <div class="empty-state"><div class="empty-state-title">Ready</div><div class="empty-state-description">Enter values and execute the selected workflow.</div></div>
+                }
+                else
+                {
+                    <div class="evaluation-result-header">
+                        <MudText Typo="Typo.subtitle1">Workflow Status</MudText>
+                        <MudChip T="string" Color="@(_result.IsValid ? Color.Success : Color.Error)">@(_result.IsValid ? "VALID" : "INVALID")</MudChip>
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mt-3">Workflow: @_workflowCode | JSON version: v@_result.WorkflowJsonVersion</MudText>
+
+                    @foreach (var error in _result.ValidationErrors)
+                    {
+                        <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mt-3"><b>@error.RuleCode</b><br />@error.Message</MudAlert>
+                    }
+
+                    @if (_result.Calculations.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Calculated Values</MudText>
+                        @foreach (var calculation in _result.Calculations)
+                        {
+                            <div class="evaluation-calculation"><MudStack Row="true" Justify="Justify.SpaceBetween"><div><MudText Typo="Typo.caption">@calculation.RuleName</MudText><MudText Typo="Typo.caption" Color="Color.Secondary">@calculation.RuleCode</MudText></div><MudText Typo="Typo.h6" Color="Color.Primary">@calculation.Value</MudText></MudStack></div>
+                        }
+                    }
+                }
+            </div>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    private List<WorkflowSummaryDto> _workflows = [];
+    private string _workflowCode = string.Empty;
+    private List<ParameterDto> _parameters = [];
+    private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
+    private EvaluateResponseDto? _result;
+    private bool _loading;
+    private bool _busy;
+
+    private string SelectedWorkflowName => _workflows.FirstOrDefault(x => x.WorkflowCode == _workflowCode)?.WorkflowName ?? _workflowCode;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _workflows = (await Api.GetWorkflowsAsync()).ToList();
+            if (_workflows.Count > 0) { _workflowCode = _workflows[0].WorkflowCode; await LoadParameters(); }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task OnWorkflowChanged(string value) { _workflowCode = value; await LoadParameters(); }
+
+    private async Task LoadParameters()
+    {
+        try
+        {
+            _loading = true; _result = null;
+            _parameters = (await Api.GetParametersAsync(_workflowCode)).ToList();
+            _values.Clear();
+            foreach (var p in _parameters) _values[p.ParameterCode] = p.DataType == DynamicRuleEngine.Domain.Enums.ParameterDataType.Boolean ? "false" : string.Empty;
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _loading = false; }
+    }
+
+    private string GetValue(string code) => _values.TryGetValue(code, out var value) ? value : string.Empty;
+    private void SetValue(string code, string? value) => _values[code] = value ?? string.Empty;
+    private bool GetBool(string code) => bool.TryParse(GetValue(code), out var value) && value;
+    private void SetBool(string code, bool value) => _values[code] = value.ToString();
+
+    private async Task RunEvaluation()
+    {
+        try
+        {
+            _busy = true;
+            var parameters = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in _parameters.Where(x => x.IsActive))
+            {
+                var value = GetValue(p.ParameterCode);
+                if (p.IsRequired && string.IsNullOrWhiteSpace(value) && p.DataType != DynamicRuleEngine.Domain.Enums.ParameterDataType.Boolean)
+                { Snackbar.Add($"{p.DisplayName} is required.", Severity.Warning); return; }
+                if (string.IsNullOrWhiteSpace(value) && p.DataType != DynamicRuleEngine.Domain.Enums.ParameterDataType.Boolean) continue;
+                parameters[p.ParameterCode] = p.DataType == DynamicRuleEngine.Domain.Enums.ParameterDataType.Boolean
+                    ? JsonSerializer.SerializeToElement(GetBool(p.ParameterCode))
+                    : JsonSerializer.SerializeToElement(value);
+            }
+            _result = await Api.EvaluateAsync(new EvaluateRequestDto { WorkflowCode = _workflowCode, Parameters = parameters });
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _busy = false; }
+    }
+}

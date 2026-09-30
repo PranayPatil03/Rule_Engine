@@ -1,0 +1,132 @@
+@page "/rules"
+@inject RuleEngineApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Rule Configuration</PageTitle>
+
+<MudStack Spacing="3">
+    <div class="page-header">
+        <div class="page-header-left">
+            <div class="page-header-title">Rule Configuration</div>
+            <div class="page-header-subtitle">Validation and calculation rules stored in RuleDefinition and published to RulesEngine JSON.</div>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="NewRule">Add Rule</MudButton>
+    </div>
+
+    <MudPaper Class="pa-4">
+        <MudSelect T="string" Label="Workflow" Value="_workflowCode" ValueChanged="OnWorkflowChanged" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var workflow in _workflows)
+            {
+                <MudSelectItem T="string" Value="@workflow.WorkflowCode">@workflow.WorkflowName</MudSelectItem>
+            }
+        </MudSelect>
+    </MudPaper>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="5">
+            <div class="form-section">
+                <div class="form-section-title">@(_edit.Id == 0 ? "Add Rule" : "Edit Rule")</div>
+                <MudStack Spacing="2">
+                    <MudTextField T="string" Label="Rule Code" @bind-Value="_edit.RuleCode" Disabled="@(_edit.Id != 0)" />
+                    <MudTextField T="string" Label="Rule Name" @bind-Value="_edit.RuleName" />
+                    <MudSelect T="RuleType" Label="Rule Type" @bind-Value="_edit.RuleType">
+                        @foreach (var type in Enum.GetValues<RuleType>())
+                        {
+                            <MudSelectItem T="RuleType" Value="@type">@type</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTextField T="string" Label="Condition Expression" Lines="3" @bind-Value="_edit.ConditionExpression" />
+                    @if (_edit.RuleType == RuleType.Calculation)
+                    {
+                        <MudTextField T="string" Label="Calculation Expression" Lines="3" @bind-Value="_edit.CalculationExpression" />
+                    }
+                    <MudTextField T="string" Label="Error Message" @bind-Value="_edit.ErrorMessage" />
+                    <MudTextField T="string" Label="Success Event" @bind-Value="_edit.SuccessEvent" />
+                    <MudNumericField T="int" Label="Sort Order" @bind-Value="_edit.SortOrder" Min="1" />
+                    <MudCheckBox T="bool" Label="Enabled" @bind-Value="_edit.Enabled" />
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+                        <MudButton Variant="Variant.Outlined" OnClick="NewRule">Clear</MudButton>
+                    </MudStack>
+                </MudStack>
+            </div>
+        </MudItem>
+
+        <MudItem xs="12" md="7">
+            <MudPaper Class="pa-2">
+                <MudTable Items="_items" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Rule</MudTh><MudTh>Type</MudTh><MudTh>Expression</MudTh><MudTh>Enabled</MudTh><MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="item">
+                        <MudTd><b>@item.RuleName</b><br /><small>@item.RuleCode</small></MudTd>
+                        <MudTd>@item.RuleType</MudTd>
+                        <MudTd><code>@item.ConditionExpression</code></MudTd>
+                        <MudTd>@(item.Enabled ? "Yes" : "No")</MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => Edit(item))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => Delete(item))" />
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-4">No rules configured.</MudText></NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3">
+                Save rule changes to SQL, then use <b>Publish From DB</b> on the Workflow JSON page to create the new runtime JSON version.
+            </MudAlert>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    private List<WorkflowSummaryDto> _workflows = [];
+    private string _workflowCode = string.Empty;
+    private List<RuleDto> _items = [];
+    private RuleDto _edit = new() { RuleType = RuleType.Validation, Enabled = true, SortOrder = 1 };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _workflows = (await Api.GetWorkflowsAsync()).ToList();
+            if (_workflows.Count > 0) { _workflowCode = _workflows[0].WorkflowCode; await Load(); }
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task OnWorkflowChanged(string value) { _workflowCode = value; NewRule(); await Load(); }
+
+    private async Task Load()
+    {
+        if (string.IsNullOrWhiteSpace(_workflowCode)) return;
+        try { _items = (await Api.GetRulesAsync(_workflowCode)).ToList(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private void NewRule() => _edit = new RuleDto { RuleType = RuleType.Validation, Enabled = true, SortOrder = _items.Count + 1 };
+
+    private void Edit(RuleDto item) => _edit = new RuleDto
+    {
+        Id = item.Id, RuleCode = item.RuleCode, RuleName = item.RuleName, RuleType = item.RuleType,
+        ConditionExpression = item.ConditionExpression, CalculationExpression = item.CalculationExpression,
+        ErrorMessage = item.ErrorMessage, SuccessEvent = item.SuccessEvent, Enabled = item.Enabled, SortOrder = item.SortOrder
+    };
+
+    private async Task Save()
+    {
+        try
+        {
+            await Api.SaveRuleAsync(_workflowCode, _edit);
+            Snackbar.Add("Rule saved. Publish to update the runtime JSON.", Severity.Success);
+            await Load(); NewRule();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Delete(RuleDto item)
+    {
+        try { await Api.DeleteRuleAsync(_workflowCode, item.Id); await Load(); Snackbar.Add("Rule deleted.", Severity.Success); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

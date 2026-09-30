@@ -1,0 +1,571 @@
+@page "/framework"
+
+@using DynamicRuleEngine.Application.DTOs
+@using DynamicRuleEngine.Domain.Enums
+
+@inject RuleEngineApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Framework Evaluation</PageTitle>
+
+<div class="framework-shell">
+
+    <div class="framework-titlebar">
+        <MudText Typo="Typo.h6">
+            Abhijit Solar Energy Pvt. Ltd. | Corporate Assessment
+        </MudText>
+
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                       Color="Color.Inherit"
+                       OnClick="LoadFramework" />
+    </div>
+
+    <div class="framework-toolbar">
+        <MudText Typo="Typo.subtitle1">
+            Framework Evaluation
+        </MudText>
+
+        <MudSelect T="string"
+                   Label="Framework"
+                   Value="@_workflowCode"
+                   ValueChanged="@OnWorkflowChanged"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   Class="framework-select">
+
+            @foreach (var workflow in _workflows)
+            {
+                <MudSelectItem T="string"
+                               Value="@workflow.WorkflowCode">
+                    @workflow.WorkflowName
+                </MudSelectItem>
+            }
+
+        </MudSelect>
+    </div>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true"
+                           Color="Color.Primary"
+                           Class="mb-2" />
+    }
+    else if (_framework is null)
+    {
+        <MudAlert Severity="Severity.Warning"
+                  Variant="Variant.Outlined">
+            No framework configuration found.
+        </MudAlert>
+    }
+    else
+    {
+        <div class="framework-table">
+
+            <div class="framework-header-row">
+                <div class="parameter-head">Parameter</div>
+                <div class="details-head">Details</div>
+                <div class="weight-head">Weights (%)</div>
+                <div class="value-head">Value</div>
+                <div class="score-head">Score</div>
+            </div>
+
+            @foreach (var parameter in _framework.Parameters
+                .Where(x => x.IsActive)
+                .OrderBy(x => x.SortOrder))
+            {
+                <div class="framework-row">
+
+                    <div class="parameter-cell">
+                        <div class="parameter-name">
+                            @parameter.DisplayName
+                        </div>
+
+                        <div class="parameter-code">
+                            @parameter.ParameterCode
+                        </div>
+                    </div>
+
+                    <div class="details-cell">
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   Class="details-button"
+                                   OnClick="@(() => ToggleDetails(parameter.ParameterCode))">
+                            @(IsExpanded(parameter.ParameterCode)
+                                ? "Hide Details −"
+                                : "Show Details +")
+                        </MudButton>
+                    </div>
+
+                    <div class="weight-cell">
+                        @parameter.Weight.ToString("0.##")%
+                    </div>
+
+                    <div class="value-cell">
+
+                        @if (parameter.DataType == ParameterDataType.Boolean)
+                        {
+                            <MudSelect T="string"
+                                       Value="@GetValue(parameter.ParameterCode)"
+                                       ValueChanged="@(value => SetValue(parameter.ParameterCode, value))"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true"
+                                       Class="framework-input">
+
+                                <MudSelectItem T="string"
+                                               Value="@("Yes")">
+                                    Yes
+                                </MudSelectItem>
+
+                                <MudSelectItem T="string"
+                                               Value="@("No")">
+                                    No
+                                </MudSelectItem>
+
+                            </MudSelect>
+                        }
+                        else
+                        {
+                            <MudTextField T="string"
+                                          Value="@GetValue(parameter.ParameterCode)"
+                                          ValueChanged="@(value => SetValue(parameter.ParameterCode, value))"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Class="framework-value-input" />
+                        }
+
+                    </div>
+
+                    <div class="score-cell">
+
+                        @if (parameter.ScoreDefinitions is not null &&
+                             parameter.ScoreDefinitions.Count > 0)
+                        {
+                            <MudSelect T="int?"
+                                       Value="@GetScore(parameter.ParameterCode)"
+                                       ValueChanged="@(value => SetScore(parameter.ParameterCode, value))"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Dense="true"
+                                       Class="framework-input">
+
+                                @foreach (var definition in parameter.ScoreDefinitions
+                                    .OrderBy(x => x.Score))
+                                {
+                                    <MudSelectItem T="int?"
+                                                   Value="@((int?)definition.Score)">
+                                        @definition.Score
+                                    </MudSelectItem>
+                                }
+
+                            </MudSelect>
+                        }
+
+                    </div>
+
+                </div>
+
+                @if (IsExpanded(parameter.ParameterCode))
+                {
+                    <div class="framework-details">
+
+                        <div class="detail-label">
+                            Parameter Name
+                        </div>
+
+                        <div class="detail-value">
+                            @parameter.DisplayName
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(parameter.WhyItMatters))
+                        {
+                            <div class="detail-label">
+                                Why It Matters?
+                            </div>
+
+                            <div class="detail-value">
+                                @parameter.WhyItMatters
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(parameter.HowToMeasure))
+                        {
+                            <div class="detail-label">
+                                How do we measure it?
+                            </div>
+
+                            <div class="detail-value">
+                                @parameter.HowToMeasure
+                            </div>
+                        }
+
+                        @if (parameter.ScoreDefinitions is not null &&
+                             parameter.ScoreDefinitions.Count > 0)
+                        {
+                            <div class="score-definition-title">
+                                Scoring Definition
+                            </div>
+
+                            <div class="score-definition-table">
+
+                                <div class="score-definition-description-head">
+                                    Description
+                                </div>
+
+                                @foreach (var definition in parameter.ScoreDefinitions
+                                    .OrderBy(x => x.Score))
+                                {
+                                    <div class="score-number">
+                                        @definition.Score
+                                    </div>
+                                }
+
+                                <div class="score-description-label">
+                                    @parameter.DisplayName
+                                </div>
+
+                                @foreach (var definition in parameter.ScoreDefinitions
+                                    .OrderBy(x => x.Score))
+                                {
+                                    <div class="score-description">
+                                        @(string.IsNullOrWhiteSpace(definition.Description)
+                                            ? "-"
+                                            : definition.Description)
+                                    </div>
+                                }
+
+                            </div>
+                        }
+
+                    </div>
+                }
+            }
+
+            <div class="framework-total-row">
+
+                <div class="total-label">
+                    Weighted Average Score
+                </div>
+
+                <div></div>
+
+                <div class="total-weight">
+                    @_totalWeight.ToString("0.##")%
+                </div>
+
+                <div class="total-value">
+                    —
+                </div>
+
+                <div class="total-score">
+                    @(_weightedAverage.HasValue
+                        ? _weightedAverage.Value.ToString("0.00")
+                        : "—")
+                </div>
+
+            </div>
+
+            @if (_calculationLoading)
+            {
+                <div class="pa-3">
+                    <MudProgressLinear Indeterminate="true"
+                                       Size="Size.Small" />
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_calculationMessage))
+            {
+                <div class="pa-3">
+                    <MudText Typo="Typo.caption"
+                             Color="Color.Secondary">
+                        @_calculationMessage
+                    </MudText>
+                </div>
+            }
+
+        </div>
+    }
+
+</div>
+
+@code {
+
+    private const string WeightedAverageRuleCode =
+        "CalculateWeightedAverage";
+
+    private const string TotalWeightRuleCode =
+        "CalculateTotalWeight";
+
+    private List<WorkflowSummaryDto> _workflows = [];
+
+    private FrameworkDto? _framework;
+
+    private string _workflowCode = string.Empty;
+
+    private bool _loading;
+
+    private bool _calculationLoading;
+
+    private string? _calculationMessage;
+
+    private decimal _totalWeight;
+
+    private decimal? _weightedAverage;
+
+    private readonly HashSet<string> _expanded =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly Dictionary<string, string> _values =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly Dictionary<string, int?> _scores =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _loading = true;
+
+            _workflows =
+                (await Api.GetWorkflowsAsync()).ToList();
+
+            if (_workflows.Count > 0)
+            {
+                _workflowCode =
+                    _workflows[0].WorkflowCode;
+
+                await LoadFramework();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(
+                ex.Message,
+                Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnWorkflowChanged(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        _workflowCode = value;
+
+        await LoadFramework();
+    }
+
+    private async Task LoadFramework()
+    {
+        if (string.IsNullOrWhiteSpace(_workflowCode))
+        {
+            return;
+        }
+
+        try
+        {
+            _loading = true;
+
+            _framework =
+                await Api.GetFrameworkAsync(_workflowCode);
+
+            _expanded.Clear();
+            _values.Clear();
+            _scores.Clear();
+
+            _totalWeight = 0m;
+            _weightedAverage = null;
+            _calculationMessage = null;
+
+            if (_framework.Parameters is null)
+            {
+                return;
+            }
+
+            foreach (var parameter in _framework.Parameters
+                .Where(x => x.IsActive))
+            {
+                _values[parameter.ParameterCode] =
+                    parameter.DataType == ParameterDataType.Boolean
+                        ? "No"
+                        : string.Empty;
+
+                _scores[parameter.ParameterCode] = null;
+            }
+
+            // Total weight is also obtained from the RulesEngine
+            // calculation stored in WorkflowJson.
+            await CalculateFramework();
+        }
+        catch (Exception ex)
+        {
+            _framework = null;
+
+            Snackbar.Add(
+                ex.Message,
+                Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SetScore(
+        string parameterCode,
+        int? value)
+    {
+        _scores[parameterCode] = value;
+
+        await CalculateFramework();
+    }
+
+    private async Task CalculateFramework()
+    {
+        if (string.IsNullOrWhiteSpace(_workflowCode) ||
+            _framework is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _calculationLoading = true;
+            _calculationMessage = null;
+
+            var scores =
+                _scores
+                    .Where(x => x.Value.HasValue)
+                    .ToDictionary(
+                        x => x.Key,
+                        x => x.Value!.Value,
+                        StringComparer.OrdinalIgnoreCase);
+
+            var result =
+                await Api.EvaluateFrameworkAsync(
+                    new FrameworkEvaluationRequestDto
+                    {
+                        WorkflowCode = _workflowCode,
+                        Scores = scores
+                    });
+
+            if (!result.IsValid)
+            {
+                _weightedAverage = null;
+
+                _calculationMessage =
+                    result.ValidationErrors.Count > 0
+                        ? string.Join(
+                            " | ",
+                            result.ValidationErrors.Select(x => x.Message))
+                        : "Framework calculation could not be completed.";
+
+                return;
+            }
+
+            var totalWeightResult =
+                result.Calculations.FirstOrDefault(
+                    x => x.RuleCode.Equals(
+                        TotalWeightRuleCode,
+                        StringComparison.OrdinalIgnoreCase));
+
+            var weightedAverageResult =
+                result.Calculations.FirstOrDefault(
+                    x => x.RuleCode.Equals(
+                        WeightedAverageRuleCode,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (TryGetDecimal(totalWeightResult?.Value, out var totalWeight))
+            {
+                _totalWeight = totalWeight;
+            }
+
+            if (TryGetDecimal(weightedAverageResult?.Value, out var weightedAverage))
+            {
+                _weightedAverage = weightedAverage;
+            }
+            else
+            {
+                _weightedAverage = null;
+            }
+
+            if (_weightedAverage is null)
+            {
+                _calculationMessage =
+                    "Select a score for each active parameter to calculate the weighted average.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _weightedAverage = null;
+            _calculationMessage = ex.Message;
+        }
+        finally
+        {
+            _calculationLoading = false;
+        }
+    }
+
+    private static bool TryGetDecimal(
+        object? value,
+        out decimal result)
+    {
+        result = 0m;
+
+        if (value is null)
+        {
+            return false;
+        }
+
+        return decimal.TryParse(
+            value.ToString(),
+            System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out result);
+    }
+
+    private bool IsExpanded(string code)
+    {
+        return _expanded.Contains(code);
+    }
+
+    private void ToggleDetails(string code)
+    {
+        if (!_expanded.Add(code))
+        {
+            _expanded.Remove(code);
+        }
+    }
+
+    private string GetValue(string code)
+    {
+        return _values.TryGetValue(
+            code,
+            out var value)
+                ? value
+                : string.Empty;
+    }
+
+    private void SetValue(
+        string code,
+        string? value)
+    {
+        _values[code] = value ?? string.Empty;
+    }
+
+    private int? GetScore(string code)
+    {
+        return _scores.TryGetValue(
+            code,
+            out var score)
+                ? score
+                : null;
+    }
+}
